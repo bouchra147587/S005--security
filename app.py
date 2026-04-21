@@ -33,18 +33,21 @@ FREE_EMAIL_DOMAINS = {
 }
 
 PHISHING_KEYWORDS = [
-    'verify', 'verification', 'confirm', 'validate', 'authenticate',
-    'account', 'password', 'username', 'login', 'sign in', 'credential',
+    # Account / Credential theft
+    'validate', 'authenticate', 'password',
     'update your', 're-enter', 'reactivate', 'suspended', 'locked',
-    'bank', 'paypal', 'payment', 'invoice', 'transaction', 'transfer',
-    'wire', 'refund', 'prize', 'winner', 'lottery', 'reward', 'cashback',
-    'bitcoin', 'crypto', 'investment', 'profit', 'million', 'inheritance',
-    'urgent', 'immediately', 'action required', 'limited time', 'expire',
-    'deadline', 'last chance', 'warning', 'alert', 'important notice',
-    'your account will be', 'failure to', 'risk',
-    'click here', 'click below', 'follow this link', 'dear customer',
-    'dear user', 'free', 'offer', 'unsubscribe', 'opt out',
-    'congratulations', 'selected', 'chosen', 'claim', 'gift'
+    'verification', 'credential',
+    # Financial lures
+    'paypal', 'wire', 'prize', 'winner', 'lottery',
+    'cashback', 'bitcoin', 'crypto', 'million', 'inheritance',
+    # Urgency / Fear
+    'urgent', 'immediately', 'action required', 'limited time',
+    'deadline', 'last chance', 'important notice',
+    'your account will be', 'failure to',
+    # Generic phishing
+    'click here', 'click below', 'follow this link',
+    'dear customer', 'dear user',
+    'congratulations', 'chosen', 'claim',
 ]
 
 URGENCY_KEYWORDS = [
@@ -195,11 +198,14 @@ def predict():
     X_num = sp.csr_matrix(scaler.transform([num_feats]))
 
     # 4. Combine and predict
+    # 4. Combine and predict
     X_combined  = sp.hstack([X_subj, X_body, X_num], format='csr')
-    prediction  = model.predict(X_combined)[0]
     proba       = model.predict_proba(X_combined)[0]
-    confidence  = float(proba[1]) * 100  # proba[1] is phishing probability
+    confidence  = float(proba[1]) * 100
 
+    # Raised threshold from 0.50 to 0.70 to reduce false positives
+    prediction  = 1 if proba[1] > 0.70 else 0
+    
     return jsonify({
         'label': 'Phishing' if prediction == 1 else 'Legitimate',
         'confidence': round(confidence, 1),
