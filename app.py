@@ -32,22 +32,50 @@ FREE_EMAIL_DOMAINS = {
     'mail.com', 'zoho.com', 'yandex.com', 'gmx.com'
 }
 
+# Whitelist of highly reputable domains (never phishing from these)
+TRUSTED_DOMAINS = {
+    'amazon.com', 'github.com', 'linkedin.com', 'microsoft.com',
+    'google.com', 'apple.com', 'facebook.com', 'twitter.com',
+    'paypal.com', 'netflix.com', 'uber.com', 'airbnb.com',
+    'spotify.com', 'slack.com', 'zoom.us', 'teams.microsoft.com',
+    'calendar.teams.microsoft.com', 'dropbox.com', 'box.com',
+    'adobe.com', 'salesforce.com', 'atlassian.com', 'github.io'
+}
+
+# Domains commonly impersonated in phishing (spoofed)
+SPOOFED_PATTERNS = [
+    'outlook-helpdesk', 'microsoft-support', 'google-verify', 'paypal-secure',
+    'amazon-account', 'apple-id', 'netflix-security', 'facebook-security'
+]
+
 PHISHING_KEYWORDS = [
+    # === DATA-DRIVEN KEYWORDS (Top 30 from chi-squared test on CEAS_08 dataset) ===
+    # Note: Removed overly generic terms ('com', 'org', 'mail', 'dev') that appear in legitimate emails
+    # and appear mostly in old mailing lists in the CEAS_08 dataset
+    'python', 'cnn', 'wrote', 'replica', 'watches',
+    'python org', 'python dev', 'cnn com', 'opensuse', 'index html',
+    'list', 'perl', 'love', 'www cnn', 'mailman',
+    'python 3000', '2007', '3000', 'file', 'index', 'message',
+    'http mail', 'health', 'org mailman', 'mail python', 'bug',
+    # === EXPERT-CURATED KEYWORDS (For generalization beyond CEAS_08) ===
     # Account / Credential theft
-    'validate', 'authenticate', 'password',
-    'update your', 're-enter', 'reactivate', 'suspended', 'locked',
-    'verification', 'credential',
+    'validate', 'authenticate', 'verify account', 'confirm identity',
+    'password', 're-enter', 'reactivate', 'suspended', 'locked',
+    'verification', 'credential', 'confirm password',
     # Financial lures
-    'paypal', 'wire', 'prize', 'winner', 'lottery',
+    'paypal', 'wire transfer', 'prize', 'winner', 'lottery',
     'cashback', 'bitcoin', 'crypto', 'million', 'inheritance',
+    'refund', 'tax return', 'payment failed',
     # Urgency / Fear
-    'urgent', 'immediately', 'action required', 'limited time',
+    'urgent action', 'immediately', 'action required', 'limited time',
     'deadline', 'last chance', 'important notice',
-    'your account will be', 'failure to',
+    'your account will be closed', 'failure to comply',
+    'act now', 'expires', 'expired',
     # Generic phishing
-    'click here', 'click below', 'follow this link',
-    'dear customer', 'dear user',
-    'congratulations', 'chosen', 'claim',
+    'click here', 'click link', 'follow link',
+    'dear customer', 'dear user', 'dear member',
+    'congratulations', 'chosen', 'claim reward',
+    'confirm details', 'update information',
 ]
 
 URGENCY_KEYWORDS = [
@@ -146,9 +174,10 @@ def extract_numeric_features(subject, body, sender="", receiver=""):
     quest_count = (body or '').count('?')
     has_html    = int(bool(HTML_TAG_PATTERN.search(body or '')))
 
-    # sending_hour and sending_dayofweek are unknown at inference time.
-    sending_hour       = 12   
-    sending_dayofweek  = 3   
+    # sending_hour and sending_dayofweek are unknown at inference time
+    # Set to -1 (NaT placeholder used during training) to avoid prediction drift
+    sending_hour       = -1
+    sending_dayofweek  = -1   
 
     return [
         url_count,          # url_count
@@ -198,14 +227,26 @@ def predict():
     X_num = sp.csr_matrix(scaler.transform([num_feats]))
 
     # 4. Combine and predict
-    # 4. Combine and predict
     X_combined  = sp.hstack([X_subj, X_body, X_num], format='csr')
     proba       = model.predict_proba(X_combined)[0]
     confidence  = float(proba[1]) * 100
 
-    # Raised threshold from 0.50 to 0.70 to reduce false positives
-    prediction  = 1 if proba[1] > 0.70 else 0
+    # Base prediction with threshold 0.80
+    prediction  = 1 if proba[1] > 0.80 else 0
+
+    # === POST-PROCESSING: Domain-based adjustments ===
+    sender_domain = extract_domain(sender)
     
+    # Check for spoofed/impersonated domains
+    is_spoofed = any(pattern in sender_domain.lower() for pattern in SPOOFED_PATTERNS)
+    if is_spoofed and proba[1] > 0.50:  # If looks like phishing AND confidence > 50%
+        prediction = 1  # Mark as phishing
+    
+    # If sender is from a highly trusted domain, don't mark as phishing unless very confident (>0.95)
+    if prediction == 1 and sender_domain in TRUSTED_DOMAINS:
+        if proba[1] < 0.95:
+            prediction = 0  # Override: trusted domain, low confidence → legitimate
+
     return jsonify({
         'label': 'Phishing' if prediction == 1 else 'Legitimate',
         'confidence': round(confidence, 1),
@@ -213,4 +254,4 @@ def predict():
     })
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=False)
