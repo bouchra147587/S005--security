@@ -1,0 +1,5 @@
+Model,Accuracy,Precision,Recall,F1-Score,ROC-AUC
+LR — Role 3 Baseline,0.9954,0.9943,0.9975,0.9959,0.9998
+Random Forest,0.9775,0.966,0.9947,0.9802,0.9988
+XGBoost,0.9948,0.9943,0.9963,0.9953,0.9996
+Voting Ensemble,0.9959,0.9954,0.9973,0.9963,0.9998

@@ -231,21 +231,8 @@ def predict():
     proba       = model.predict_proba(X_combined)[0]
     confidence  = float(proba[1]) * 100
 
-    # Base prediction with threshold 0.80
-    prediction  = 1 if proba[1] > 0.80 else 0
-
-    # === POST-PROCESSING: Domain-based adjustments ===
-    sender_domain = extract_domain(sender)
-    
-    # Check for spoofed/impersonated domains
-    is_spoofed = any(pattern in sender_domain.lower() for pattern in SPOOFED_PATTERNS)
-    if is_spoofed and proba[1] > 0.50:  # If looks like phishing AND confidence > 50%
-        prediction = 1  # Mark as phishing
-    
-    # If sender is from a highly trusted domain, don't mark as phishing unless very confident (>0.95)
-    if prediction == 1 and sender_domain in TRUSTED_DOMAINS:
-        if proba[1] < 0.95:
-            prediction = 0  # Override: trusted domain, low confidence → legitimate
+    # Base prediction with threshold 0.50 (matches notebook guidance)
+    prediction  = 1 if proba[1] >= 0.50 else 0
 
     return jsonify({
         'label': 'Phishing' if prediction == 1 else 'Legitimate',
